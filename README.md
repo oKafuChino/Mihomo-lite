@@ -1,4 +1,4 @@
-# ✨ Mihomo Lite - 一键配置脚本 V1.0.3
+# ✨ Mihomo Lite - 一键配置脚本 V1.0.4
 
 <!-- GitHub Badges -->
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%2B-orange?logo=ubuntu)

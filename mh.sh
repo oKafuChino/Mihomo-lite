@@ -4,7 +4,7 @@ set -u
 
 APP_NAME="Mihomo-lite"
 SCRIPT_AUTHOR="oKafuChino"
-SCRIPT_VERSION="1.0.3"
+SCRIPT_VERSION="1.0.4"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"
@@ -20,6 +20,27 @@ green() { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 info() { printf '%s\n' "$*"; }
 
+C_CYAN=$(printf '\033[1;36m')
+C_GREEN=$(printf '\033[1;32m')
+C_YELLOW=$(printf '\033[1;33m')
+C_PURPLE=$(printf '\033[1;35m')
+C_RED=$(printf '\033[1;31m')
+C_BOLD=$(printf '\033[1m')
+C_RESET=$(printf '\033[0m')
+
+ui_line() { printf '%s====================================================%s\n' "$C_CYAN" "$C_RESET"; }
+ui_dash() { printf '%s----------------------------------------------------%s\n' "$C_CYAN" "$C_RESET"; }
+ui_title() {
+  ui_line
+  printf ' [*] %s%s%s\n' "$C_BOLD" "$1" "$C_RESET"
+  ui_line
+}
+ui_section() { printf ' %s[+] %s%s\n' "$C_YELLOW" "$1" "$C_RESET"; }
+ui_prompt() { printf '%s%s%s' "$C_BOLD" "$1" "$C_RESET"; }
+ui_success() { printf '%s[OK]%s %s\n' "$C_GREEN" "$C_RESET" "$1"; }
+ui_warn() { printf '%s[!]%s %s\n' "$C_YELLOW" "$C_RESET" "$1"; }
+ui_error() { printf '%s[x]%s %s\n' "$C_RED" "$C_RESET" "$1"; }
+
 need_root() {
   if [ "$(id -u)" != "0" ]; then
     red "请使用 root 权限运行：sudo mh"
@@ -28,7 +49,8 @@ need_root() {
 }
 
 pause() {
-  printf '\n按回车返回菜单...'
+  printf '\n'
+  ui_prompt "按回车返回菜单..."
   read -r _ || true
 }
 
@@ -490,14 +512,18 @@ restart_service() {
 
 install_core() {
   need_root
+  clear 2>/dev/null || true
+  ui_title "一键安装 Mihomo 内核"
   detect_os
+  ui_section "安装系统依赖"
   install_packages
   mkdir -p "$CONFIG_DIR" "$LOG_DIR"
 
   download_url="$(latest_download_url)"
   tmp_file="/tmp/mihomo.$$"
 
-  info "正在下载 mihomo：$download_url"
+  ui_warn "下载地址：$download_url"
+  ui_section "下载并安装 Mihomo 内核"
   curl -fL "$download_url" -o "$tmp_file"
   gzip -dc "$tmp_file" > "$BIN_PATH"
   rm -f "$tmp_file"
@@ -512,12 +538,12 @@ install_core() {
     systemd) write_systemd_service ;;
     openrc) write_openrc_service ;;
     *)
-      red "未找到 systemd 或 OpenRC，mihomo 已安装但服务未创建。"
+      ui_error "未找到 systemd 或 OpenRC，mihomo 已安装但服务未创建。"
       exit 1
       ;;
   esac
 
-  green "mihomo 内核安装完成，服务已启动。"
+  ui_success "mihomo 内核安装完成，服务已启动。"
 }
 
 ensure_installed() {
@@ -554,7 +580,7 @@ port_in_use() {
 prompt_node_name() {
   proto_prefix="$1"
   default_name="${proto_prefix}-$(date +%m%d%H%M)"
-  printf '请输入节点名称（默认 %s）：' "$default_name"
+  ui_prompt "请输入节点名称（默认 $default_name）："
   read -r node_name || true
   if [ -z "$node_name" ]; then
     node_name="$default_name"
@@ -574,7 +600,7 @@ prompt_node_name() {
 
 prompt_port() {
   default_port="$(random_port)"
-  printf '请输入监听端口（默认 %s）：' "$default_port"
+  ui_prompt "请输入监听端口（默认 $default_port）："
   read -r node_port || true
   [ -n "$node_port" ] || node_port="$default_port"
 
@@ -677,22 +703,26 @@ print_node_link() {
   node_link="$(node_share_link "$proto" "$node_name" "$node_port" "$value1" "$value2" "$value3" "$value4" "$value5" "$value6")"
   cat <<EOF
 
-请确认 VPS 防火墙和云厂商安全组已放行 TCP/UDP $node_port。
+${C_CYAN}----------------------------------------------------${C_RESET}
+ ${C_YELLOW}[!]${C_RESET} 请确认 VPS 防火墙和云厂商安全组已放行 TCP/UDP ${C_BOLD}$node_port${C_RESET}
 
-节点链接：
+ ${C_GREEN}[+] 节点链接${C_RESET}
 $node_link
+${C_CYAN}----------------------------------------------------${C_RESET}
 EOF
 }
 
 add_vless_reality_node() {
+  clear 2>/dev/null || true
+  ui_title "创建 VLESS + Reality 节点"
   prompt_node_name vless-reality
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
-  printf '请输入 Reality SNI（默认 www.microsoft.com）：'
+  ui_prompt "请输入 Reality SNI（默认 www.microsoft.com）："
   read -r sni || true
   [ -n "$sni" ] || sni="www.microsoft.com"
-  printf '请输入 Reality 目标地址 dest（默认 %s:443）：' "$sni"
+  ui_prompt "请输入 Reality 目标地址 dest（默认 $sni:443）："
   read -r dest || true
   [ -n "$dest" ] || dest="${sni}:443"
   node_uuid="$(new_uuid)"
@@ -701,25 +731,27 @@ add_vless_reality_node() {
   public_key="${key_pair#*|}"
   short_id="$(rand_hex 8)"
   append_node "vless-reality|$node_name|$node_port|$node_uuid|$sni|$dest|$private_key|$public_key|$short_id"
-  green "VLESS + Reality 节点已生成并重启服务。"
+  ui_success "VLESS + Reality 节点已生成并重启服务。"
   print_node_link vless-reality "$node_name" "$node_port" "$node_uuid" "$sni" "$dest" "$private_key" "$public_key" "$short_id"
 }
 
 add_hysteria2_node() {
+  clear 2>/dev/null || true
+  ui_title "创建 Hysteria2 节点"
   prompt_node_name hy2
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
-  printf '请输入 TLS SNI / 证书域名（默认 bing.com）：'
+  ui_prompt "请输入 TLS SNI / 证书域名（默认 bing.com）："
   read -r sni || true
   [ -n "$sni" ] || sni="bing.com"
   default_password="$(rand_alnum 32)"
-  printf '请输入 Hysteria2 密码（默认随机生成）：'
+  ui_prompt "请输入 Hysteria2 密码（默认随机生成）："
   read -r node_password || true
   [ -n "$node_password" ] || node_password="$default_password"
   node_password="$(printf '%s' "$node_password" | tr -cd 'A-Za-z0-9._~-')"
   [ -n "$node_password" ] || node_password="$default_password"
-  printf '是否开启 Salamander 混淆？[y/N]：'
+  ui_prompt "是否开启 Salamander 混淆？[y/N]："
   read -r enable_salamander || true
   salamander_password=""
   case "$enable_salamander" in
@@ -731,16 +763,18 @@ add_hysteria2_node() {
   cert_file="${cert_pair%%|*}"
   key_file="${cert_pair#*|}"
   append_node "hysteria2|$node_name|$node_port|$node_password|$sni|$cert_file|$key_file|$salamander_password|"
-  green "Hysteria2 节点已生成并重启服务。"
+  ui_success "Hysteria2 节点已生成并重启服务。"
   print_node_link hysteria2 "$node_name" "$node_port" "$node_password" "$sni" "$cert_file" "$key_file" "$salamander_password" ""
 }
 
 add_anytls_node() {
+  clear 2>/dev/null || true
+  ui_title "创建 AnyTLS 节点"
   prompt_node_name anytls
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
-  printf '请输入 TLS SNI / 证书域名（默认 bing.com）：'
+  ui_prompt "请输入 TLS SNI / 证书域名（默认 bing.com）："
   read -r sni || true
   [ -n "$sni" ] || sni="bing.com"
   node_password="$(rand_alnum 32)"
@@ -748,22 +782,24 @@ add_anytls_node() {
   cert_file="${cert_pair%%|*}"
   key_file="${cert_pair#*|}"
   append_node "anytls|$node_name|$node_port|$node_password|$sni|$cert_file|$key_file||"
-  green "AnyTLS 节点已生成并重启服务。"
+  ui_success "AnyTLS 节点已生成并重启服务。"
   print_node_link anytls "$node_name" "$node_port" "$node_password" "$sni" "$cert_file" "$key_file" "" ""
 }
 
 add_vless_ws_node() {
+  clear 2>/dev/null || true
+  ui_title "创建 VLESS + WebSocket 节点"
   prompt_node_name vless-ws
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
   server_ip="$(public_ip)"
-  printf '请输入 WebSocket 域名/Host（默认 %s）：' "$server_ip"
+  ui_prompt "请输入 WebSocket 域名/Host（默认 $server_ip）："
   read -r ws_host || true
   [ -n "$ws_host" ] || ws_host="$server_ip"
   ws_host="$(printf '%s' "$ws_host" | tr -d '|')"
   default_path="/$(rand_alnum 10)"
-  printf '请输入 WebSocket 路径（默认 %s）：' "$default_path"
+  ui_prompt "请输入 WebSocket 路径（默认 $default_path）："
   read -r ws_path || true
   [ -n "$ws_path" ] || ws_path="$default_path"
   case "$ws_path" in
@@ -772,7 +808,7 @@ add_vless_ws_node() {
   esac
   node_uuid="$(new_uuid)"
   append_node "vless-ws|$node_name|$node_port|$node_uuid|$ws_path|$ws_host|||"
-  green "VLESS + WS 节点已生成并重启服务。"
+  ui_success "VLESS + WS 节点已生成并重启服务。"
   print_node_link vless-ws "$node_name" "$node_port" "$node_uuid" "$ws_path" "$ws_host" "" "" ""
 }
 
@@ -780,15 +816,21 @@ add_node() {
   need_root
   ensure_installed
 
-  cat <<'EOF'
-请选择要创建的节点协议：
-  1. vless + reality
-  2. hysteria2
-  3. anytls
-  4. vless + ws
-  0. 返回主菜单
+  clear 2>/dev/null || true
+  cat <<EOF
+${C_CYAN}====================================================${C_RESET}
+ [*] ${C_BOLD}创建代理节点${C_RESET}
+${C_CYAN}====================================================${C_RESET}
+ ${C_YELLOW}[+] 请选择协议类型${C_RESET}
+   ${C_GREEN}1.${C_RESET} VLESS + Reality
+   ${C_GREEN}2.${C_RESET} Hysteria2
+   ${C_GREEN}3.${C_RESET} AnyTLS
+   ${C_GREEN}4.${C_RESET} VLESS + WebSocket
+${C_CYAN}----------------------------------------------------${C_RESET}
+ ${C_GREEN}0.${C_RESET} => 返回主菜单
+${C_CYAN}====================================================${C_RESET}
 EOF
-  printf '请输入数字选择：'
+  ui_prompt "请输入数字选择 (0-4)："
   read -r protocol_choice || true
 
   case "$protocol_choice" in
@@ -803,10 +845,15 @@ EOF
 
 show_all_nodes() {
   if [ ! -s "$NODES_DB" ]; then
-    yellow "当前没有节点。"
+    clear 2>/dev/null || true
+    ui_title "查看所有节点"
+    ui_warn "当前没有节点。"
     return 1
   fi
 
+  clear 2>/dev/null || true
+  ui_title "查看所有节点"
+  ui_section "节点列表"
   i=1
   SHARE_SERVER_IP="$(public_ip)"
   export SHARE_SERVER_IP
@@ -817,8 +864,8 @@ show_all_nodes() {
     case "$proto" in
       vless-reality|hysteria2|anytls|vless-ws)
         node_link="$(node_share_link "$proto" "$node_name" "$node_port" "$value1" "$value2" "$value3" "$value4" "$value5" "$value6")"
-        printf '%s. %s  protocol=%s  port=%s\n' "$i" "$node_name" "$proto" "$node_port"
-        printf '   %s\n' "$node_link"
+        printf ' %s%s.%s %s%s%s  protocol=%s  port=%s\n' "$C_GREEN" "$i" "$C_RESET" "$C_BOLD" "$node_name" "$C_RESET" "$proto" "$node_port"
+        printf '   %s\n\n' "$node_link"
         printf '%s\n' "$node_link" >> "$sub_file"
         ;;
       *)
@@ -827,8 +874,8 @@ show_all_nodes() {
         legacy_cipher="$node_port"
         legacy_password="$value1"
         node_link="$(node_share_link shadowsocks "$legacy_name" "$legacy_port" "$legacy_cipher" "$legacy_password" "" "" "" "")"
-        printf '%s. %s  protocol=shadowsocks  port=%s\n' "$i" "$legacy_name" "$legacy_port"
-        printf '   %s\n' "$node_link"
+        printf ' %s%s.%s %s%s%s  protocol=shadowsocks  port=%s\n' "$C_GREEN" "$i" "$C_RESET" "$C_BOLD" "$legacy_name" "$C_RESET" "$legacy_port"
+        printf '   %s\n\n' "$node_link"
         printf '%s\n' "$node_link" >> "$sub_file"
         ;;
     esac
@@ -839,11 +886,13 @@ show_all_nodes() {
     sub_base64="$(base64_one_line < "$sub_file")"
     cat <<EOF
 
-聚合订阅 Base64：
+${C_CYAN}----------------------------------------------------${C_RESET}
+ ${C_YELLOW}[+] 聚合订阅 Base64${C_RESET}
 $sub_base64
 
-聚合订阅 Data URI：
+ ${C_YELLOW}[+] 聚合订阅 Data URI${C_RESET}
 data:text/plain;base64,$sub_base64
+${C_CYAN}----------------------------------------------------${C_RESET}
 EOF
   fi
   rm -f "$sub_file"
@@ -851,19 +900,20 @@ EOF
 
 list_nodes() {
   if [ ! -s "$NODES_DB" ]; then
-    yellow "当前没有节点。"
+    ui_warn "当前没有节点。"
     return 1
   fi
 
+  ui_section "可删除节点"
   i=1
   while IFS='|' read -r proto node_name node_port value1 value2 value3 value4 value5 value6; do
     [ -n "$proto" ] || continue
     case "$proto" in
       vless-reality|hysteria2|anytls|vless-ws)
-        printf '%s. %s  protocol=%s  port=%s\n' "$i" "$node_name" "$proto" "$node_port"
+        printf ' %s%s.%s %s%s%s  protocol=%s  port=%s\n' "$C_GREEN" "$i" "$C_RESET" "$C_BOLD" "$node_name" "$C_RESET" "$proto" "$node_port"
         ;;
       *)
-        printf '%s. %s  protocol=shadowsocks  port=%s\n' "$i" "$proto" "$node_name"
+        printf ' %s%s.%s %s%s%s  protocol=shadowsocks  port=%s\n' "$C_GREEN" "$i" "$C_RESET" "$C_BOLD" "$proto" "$C_RESET" "$node_name"
         ;;
     esac
     i=$((i + 1))
@@ -874,13 +924,16 @@ delete_node() {
   need_root
   ensure_installed
 
+  clear 2>/dev/null || true
+  ui_title "删除节点"
   list_nodes || return 0
-  printf '请输入要删除的节点编号：'
+  ui_dash
+  ui_prompt "请输入要删除的节点编号："
   read -r choice || true
 
   case "$choice" in
     ''|*[!0-9]*)
-      red "请输入有效数字。"
+      ui_error "请输入有效数字。"
       exit 1
       ;;
   esac
@@ -888,21 +941,35 @@ delete_node() {
   tmp_file="$NODES_DB.tmp"
   deleted="$(awk -F'|' -v n="$choice" 'NR == n { if ($1 == "vless-reality" || $1 == "hysteria2" || $1 == "anytls" || $1 == "vless-ws") print $2; else print $1 }' "$NODES_DB")"
   if [ -z "$deleted" ]; then
-    red "未找到编号 $choice。"
+    ui_error "未找到编号 $choice。"
     exit 1
   fi
+
+  ui_prompt "确认删除节点 $deleted？输入 y 确认："
+  read -r confirm || true
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *)
+      ui_warn "已取消删除。"
+      return 0
+      ;;
+  esac
 
   awk -v n="$choice" 'NR != n { print }' "$NODES_DB" > "$tmp_file"
   mv "$tmp_file" "$NODES_DB"
   chmod 600 "$NODES_DB"
   render_config
   restart_service
-  green "节点 $deleted 已删除，服务已重启。"
+  ui_success "节点 $deleted 已删除，服务已重启。"
 }
 
 show_config() {
   need_root
   ensure_installed
+  clear 2>/dev/null || true
+  ui_title "查看 YAML 配置文件"
+  ui_warn "配置文件路径：$CONFIG_FILE"
+  ui_dash
   if command -v less >/dev/null 2>&1; then
     less "$CONFIG_FILE"
   else
@@ -912,6 +979,10 @@ show_config() {
 
 show_logs() {
   ensure_installed
+  clear 2>/dev/null || true
+  ui_title "查看服务实时日志"
+  ui_warn "按 Ctrl+C 可停止查看日志并返回终端。"
+  ui_dash
   manager="$(service_manager)"
   case "$manager" in
     systemd) journalctl -u "$SERVICE_NAME" -f --no-pager ;;
@@ -930,33 +1001,39 @@ update_script() {
   need_root
   ensure_curl
 
+  clear 2>/dev/null || true
+  ui_title "更新管理脚本"
   tmp_file="/tmp/mh-update.$$"
-  info "正在从 GitHub 更新脚本：$SCRIPT_RAW_URL"
+  ui_warn "更新来源：$SCRIPT_RAW_URL"
+  ui_section "下载最新脚本"
   curl -fsSL "$SCRIPT_RAW_URL" -o "$tmp_file" || {
     rm -f "$tmp_file"
-    red "更新失败：无法下载最新脚本。"
+    ui_error "更新失败：无法下载最新脚本。"
     exit 1
   }
 
   if ! grep -q 'mihomo 一键配置管理面板' "$tmp_file"; then
     rm -f "$tmp_file"
-    red "更新失败：下载内容不像 mh 脚本，已取消替换。"
+    ui_error "更新失败：下载内容不像 mh 脚本，已取消替换。"
     exit 1
   fi
 
   chmod +x "$tmp_file"
   mv "$tmp_file" "$CLI_PATH"
-  green "脚本更新完成。重新输入 mh 可打开新版管理面板。"
+  ui_success "脚本更新完成。重新输入 mh 可打开新版管理面板。"
 }
 
 uninstall_all() {
   need_root
-  printf '确认卸载 mihomo、删除配置和 mh 命令？输入 y 确认：'
+  clear 2>/dev/null || true
+  ui_title "彻底卸载脚本"
+  ui_warn "将停止服务，并删除 mihomo 内核、配置目录、日志目录和 mh 命令。"
+  ui_prompt "确认卸载 mihomo、删除配置和 mh 命令？输入 y 确认："
   read -r confirm || true
   case "$confirm" in
     y|Y|yes|YES) ;;
     *)
-      yellow "已取消卸载。"
+      ui_warn "已取消卸载。"
       return 0
       ;;
   esac
@@ -977,18 +1054,10 @@ uninstall_all() {
 
   rm -f "$BIN_PATH" "$CLI_PATH"
   rm -rf "$CONFIG_DIR" "$LOG_DIR"
-  green "卸载完成。"
+  ui_success "卸载完成。"
 }
 
 menu() {
-  # 利用 printf 定义终端颜色，确保跨平台与 cat <<EOF 的完美兼容
-  C_CYAN=$(printf '\033[1;36m')
-  C_GREEN=$(printf '\033[1;32m')
-  C_YELLOW=$(printf '\033[1;33m')
-  C_PURPLE=$(printf '\033[1;35m')
-  C_BOLD=$(printf '\033[1m')
-  C_RESET=$(printf '\033[0m')
-
   while true; do
     clear 2>/dev/null || true
     current_status="$(service_status_text)"
@@ -1007,7 +1076,7 @@ ${C_CYAN}----------------------------------------------------${C_RESET}
    ${C_GREEN}3.${C_RESET} 删除特定节点
 
  ${C_YELLOW}[+] 核心管理${C_RESET}
-   ${C_GREEN}4.${C_RESET} 一键安装 mihomo 内核
+   ${C_GREEN}4.${C_RESET} 一键安装 Mihomo 内核
    ${C_GREEN}5.${C_RESET} 更新管理脚本
    ${C_GREEN}6.${C_RESET} 彻底卸载脚本
    
@@ -1030,10 +1099,10 @@ EOF
       5) update_script; pause ;;
       6) uninstall_all; pause ;;
       7) show_config; pause ;;
-      8) need_root; ensure_installed; restart_service; green "服务已重启。"; pause ;;
+      8) need_root; ensure_installed; clear 2>/dev/null || true; ui_title "重启 Mihomo 服务"; restart_service; ui_success "服务已重启。"; pause ;;
       9) show_logs ;;
       0) clear; exit 0 ;;
-      *) red "无效选择，请输入 0-9 之间的数字。"; pause ;;
+      *) ui_error "无效选择，请输入 0-9 之间的数字。"; pause ;;
     esac
   done
 }

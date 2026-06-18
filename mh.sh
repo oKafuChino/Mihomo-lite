@@ -4,7 +4,7 @@ set -u
 
 APP_NAME="Mihomo-lite"
 SCRIPT_AUTHOR="oKafuChino"
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.0.1"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"

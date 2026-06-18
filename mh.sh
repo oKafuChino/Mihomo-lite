@@ -4,7 +4,7 @@ set -u
 
 APP_NAME="Mihomo-lite"
 SCRIPT_AUTHOR="oKafuChino"
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.0.5"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"
@@ -722,9 +722,7 @@ add_vless_reality_node() {
   ui_prompt "请输入 Reality SNI（默认 www.microsoft.com）："
   read -r sni || true
   [ -n "$sni" ] || sni="www.microsoft.com"
-  ui_prompt "请输入 Reality 目标地址 dest（默认 $sni:443）："
-  read -r dest || true
-  [ -n "$dest" ] || dest="${sni}:443"
+  dest="${sni}:443"
   node_uuid="$(new_uuid)"
   key_pair="$(create_reality_keypair)" || exit 1
   private_key="${key_pair%%|*}"
@@ -889,9 +887,6 @@ show_all_nodes() {
 ${C_CYAN}----------------------------------------------------${C_RESET}
  ${C_YELLOW}[+] 聚合订阅 Base64${C_RESET}
 $sub_base64
-
- ${C_YELLOW}[+] 聚合订阅 Data URI${C_RESET}
-data:text/plain;base64,$sub_base64
 ${C_CYAN}----------------------------------------------------${C_RESET}
 EOF
   fi
@@ -928,6 +923,9 @@ delete_node() {
   ui_title "删除节点"
   list_nodes || return 0
   ui_dash
+  printf ' %s0.%s 返回上一级\n' "$C_GREEN" "$C_RESET"
+  printf ' %s99.%s 一键删除所有节点\n' "$C_GREEN" "$C_RESET"
+  ui_dash
   ui_prompt "请输入要删除的节点编号："
   read -r choice || true
 
@@ -937,6 +935,29 @@ delete_node() {
       exit 1
       ;;
   esac
+
+  if [ "$choice" = "0" ]; then
+    ui_warn "已退出删除节点页面。"
+    return 0
+  fi
+
+  if [ "$choice" = "99" ]; then
+    ui_prompt "确认删除所有节点？输入 y 确认："
+    read -r confirm_all || true
+    case "$confirm_all" in
+      y|Y|yes|YES) ;;
+      *)
+        ui_warn "已取消删除所有节点。"
+        return 0
+        ;;
+    esac
+    : > "$NODES_DB"
+    chmod 600 "$NODES_DB"
+    render_config
+    restart_service
+    ui_success "所有节点已删除，服务已重启。"
+    return 0
+  fi
 
   tmp_file="$NODES_DB.tmp"
   deleted="$(awk -F'|' -v n="$choice" 'NR == n { if ($1 == "vless-reality" || $1 == "hysteria2" || $1 == "anytls" || $1 == "vless-ws") print $2; else print $1 }' "$NODES_DB")"

@@ -1,4 +1,4 @@
-# ✨ Mihomo Lite - 一键配置脚本 V1.0.4
+# ✨ Mihomo Lite - 一键配置脚本 V1.0.5
 
 <!-- GitHub Badges -->
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%2B-orange?logo=ubuntu)
@@ -27,11 +27,11 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 
 通过终端输入 `mh` 即可打开 TUI 菜单，支持以下快捷操作：
 
-* **📦 核心管理**：一键安装 / 卸载 mihomo 内核至系统目录。
+* **📦 核心管理**：一键安装 / 卸载 Mihomo 内核至系统目录。
 * **🔗 节点生成**：一键生成代理节点，并自动输出可复制导入的节点链接。
-* **📊 节点管理**：查看所有已建节点、单节点链接以及 **Base64 聚合订阅**，支持快速清理。
+* **📊 节点管理**：查看所有已建节点、单节点链接以及 **Base64 聚合订阅**，支持单节点删除和一键清空。
 * **⚙️ 服务运维**：一键查看 YAML 配置文件、重启服务进程。
-* **📡 运行监控**：实时查看 mihomo 运行日志。
+* **📡 运行监控**：实时查看 Mihomo 运行日志。
 * **🔄 无缝升级**：支持一键拉取并更新管理脚本自身。
 
 ### 🛡️ 支持的代理协议

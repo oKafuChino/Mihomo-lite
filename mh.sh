@@ -2,7 +2,9 @@
 
 set -u
 
-APP_NAME="mihomo-onekey"
+APP_NAME="Mihomo-lite"
+SCRIPT_AUTHOR="oKafuChino"
+SCRIPT_VERSION="0.3.0"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"
@@ -11,6 +13,7 @@ NODES_DB="$CONFIG_DIR/nodes.db"
 LOG_DIR="/var/log/mihomo"
 SERVICE_NAME="mihomo"
 GITHUB_API="${MIHOMO_GITHUB_API:-https://api.github.com/repos/MetaCubeX/mihomo/releases/latest}"
+SCRIPT_RAW_URL="${MH_SCRIPT_RAW_URL:-https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/mh.sh}"
 
 red() { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -70,6 +73,51 @@ service_manager() {
     printf 'openrc'
   else
     printf 'unknown'
+  fi
+}
+
+service_status_text() {
+  if [ ! -x "$BIN_PATH" ] || [ ! -f "$CONFIG_FILE" ]; then
+    printf '未安装'
+    return 0
+  fi
+
+  manager="$(service_manager)"
+  case "$manager" in
+    systemd)
+      if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        printf '运行中'
+      else
+        printf '未运行'
+      fi
+      ;;
+    openrc)
+      if rc-service "$SERVICE_NAME" status >/dev/null 2>&1; then
+        printf '运行中'
+      else
+        printf '未运行'
+      fi
+      ;;
+    *)
+      printf '未知'
+      ;;
+  esac
+}
+
+ensure_curl() {
+  if command -v curl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache ca-certificates curl
+  elif command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y ca-certificates curl
+  else
+    red "未找到 apk 或 apt-get，无法自动安装 curl。"
+    exit 1
   fi
 }
 
@@ -878,6 +926,29 @@ show_logs() {
   esac
 }
 
+update_script() {
+  need_root
+  ensure_curl
+
+  tmp_file="/tmp/mh-update.$$"
+  info "正在从 GitHub 更新脚本：$SCRIPT_RAW_URL"
+  curl -fsSL "$SCRIPT_RAW_URL" -o "$tmp_file" || {
+    rm -f "$tmp_file"
+    red "更新失败：无法下载最新脚本。"
+    exit 1
+  }
+
+  if ! grep -q 'mihomo 一键配置管理面板' "$tmp_file"; then
+    rm -f "$tmp_file"
+    red "更新失败：下载内容不像 mh 脚本，已取消替换。"
+    exit 1
+  fi
+
+  chmod +x "$tmp_file"
+  mv "$tmp_file" "$CLI_PATH"
+  green "脚本更新完成。重新输入 mh 可打开新版管理面板。"
+}
+
 uninstall_all() {
   need_root
   printf '确认卸载 mihomo、删除配置和 mh 命令？输入 y 确认：'
@@ -912,9 +983,13 @@ uninstall_all() {
 menu() {
   while true; do
     clear 2>/dev/null || true
-    cat <<'EOF'
+    current_status="$(service_status_text)"
+    cat <<EOF
 ========================================
   mihomo 一键配置管理面板
+  作者：$SCRIPT_AUTHOR
+  版本：$SCRIPT_VERSION
+  mihomo 状态：$current_status
 ========================================
   1. 一键安装 mihomo 内核
   2. 一键生成节点
@@ -923,7 +998,8 @@ menu() {
   5. 查看配置文件
   6. 重启服务
   7. 查看实时日志
-  8. 卸载脚本
+  8. 更新脚本
+  9. 卸载脚本
   0. 退出脚本
 ========================================
 EOF
@@ -938,7 +1014,8 @@ EOF
       5) show_config; pause ;;
       6) need_root; ensure_installed; restart_service; green "服务已重启。"; pause ;;
       7) show_logs ;;
-      8) uninstall_all; pause ;;
+      8) update_script; pause ;;
+      9) uninstall_all; pause ;;
       0) exit 0 ;;
       *) red "无效选择。"; pause ;;
     esac
@@ -953,6 +1030,7 @@ case "${1:-}" in
   delete|del|remove) delete_node ;;
   restart) need_root; ensure_installed; restart_service ;;
   logs|log) show_logs ;;
+  update) update_script ;;
   uninstall) uninstall_all ;;
   *) menu ;;
 esac

@@ -18,9 +18,9 @@
 
 请在具有 `root` 权限的终端中执行以下一键安装命令：
 
-` ` `bash
+```sh
 curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install.sh | sudo sh
-` ` `
+```
 ---
 
 ## 🌟 核心功能

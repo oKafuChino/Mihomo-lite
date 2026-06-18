@@ -149,7 +149,7 @@ new_uuid() {
 }
 
 url_path() {
-  value="${1:-/}"
+  value="${1:-node}"
   printf '%s' "$value" | sed 's/%/%25/g; s/ /%20/g; s/\//%2F/g; s/#/%23/g; s/?/%3F/g; s/&/%26/g'
 }
 
@@ -266,97 +266,96 @@ EOF
 
   if [ -s "$NODES_DB" ]; then
     printf 'listeners:\n' >> "$tmp_file"
-    while IFS='|' read -r proto node_name node_port value1 value2 value3 value4 value5 value6; do
-      [ -n "$proto" ] || continue
-      case "$proto" in
+    while IFS='|' read -r cfg_proto cfg_node_name cfg_node_port cfg_value1 cfg_value2 cfg_value3 cfg_value4 cfg_value5 cfg_value6; do
+      [ -n "$cfg_proto" ] || continue
+      case "$cfg_proto" in
         vless-reality)
-          node_uuid="$value1"
-          sni="$value2"
-          dest="$value3"
-          private_key="$value4"
-          short_id="$value6"
+          cfg_node_uuid="$cfg_value1"
+          cfg_sni="$cfg_value2"
+          cfg_dest="$cfg_value3"
+          cfg_private_key="$cfg_value4"
+          cfg_short_id="$cfg_value6"
           cat >> "$tmp_file" <<EOF
-  - name: "$node_name"
+  - name: "$cfg_node_name"
     type: vless
-    port: $node_port
+    port: $cfg_node_port
     listen: 0.0.0.0
     users:
-      - username: "$node_name"
-        uuid: "$node_uuid"
+      - username: "$cfg_node_name"
+        uuid: "$cfg_node_uuid"
     tls: true
     reality-config:
-      dest: "$dest"
-      private-key: "$private_key"
+      dest: "$cfg_dest"
+      private-key: "$cfg_private_key"
       short-id:
-        - "$short_id"
+        - "$cfg_short_id"
       server-names:
-        - "$sni"
+        - "$cfg_sni"
 EOF
           ;;
         hysteria2)
-          node_password="$value1"
-          cert_file="$value3"
-          key_file="$value4"
-          salamander_password="$value5"
+          cfg_node_password="$cfg_value1"
+          cfg_cert_file="$cfg_value3"
+          cfg_key_file="$cfg_value4"
+          cfg_salamander_password="$cfg_value5"
           cat >> "$tmp_file" <<EOF
-  - name: "$node_name"
+  - name: "$cfg_node_name"
     type: hysteria2
-    port: $node_port
+    port: $cfg_node_port
     listen: 0.0.0.0
     users:
-      "$node_name": "$node_password"
-    certificate: "$cert_file"
-    private-key: "$key_file"
+      "$cfg_node_name": "$cfg_node_password"
+    certificate: "$cfg_cert_file"
+    private-key: "$cfg_key_file"
 EOF
-          if [ -n "$salamander_password" ]; then
+          if [ -n "$cfg_salamander_password" ]; then
             cat >> "$tmp_file" <<EOF
     obfs: salamander
-    obfs-password: "$salamander_password"
+    obfs-password: "$cfg_salamander_password"
 EOF
           fi
           ;;
         anytls)
-          node_password="$value1"
-          cert_file="$value3"
-          key_file="$value4"
+          cfg_node_password="$cfg_value1"
+          cfg_cert_file="$cfg_value3"
+          cfg_key_file="$cfg_value4"
           cat >> "$tmp_file" <<EOF
-  - name: "$node_name"
+  - name: "$cfg_node_name"
     type: anytls
-    port: $node_port
+    port: $cfg_node_port
     listen: 0.0.0.0
     users:
-      "$node_name": "$node_password"
-    certificate: "$cert_file"
-    private-key: "$key_file"
+      "$cfg_node_name": "$cfg_node_password"
+    certificate: "$cfg_cert_file"
+    private-key: "$cfg_key_file"
 EOF
           ;;
         vless-ws)
-          node_uuid="$value1"
-          ws_path="$value2"
-          ws_host="$value3"
+          cfg_node_uuid="$cfg_value1"
+          cfg_ws_path="$cfg_value2"
           cat >> "$tmp_file" <<EOF
-  - name: "$node_name"
+  - name: "$cfg_node_name"
     type: vless
-    port: $node_port
+    port: $cfg_node_port
     listen: 0.0.0.0
     users:
-      - username: "$node_name"
-        uuid: "$node_uuid"
-    ws-path: "$ws_path"
+      - username: "$cfg_node_name"
+        uuid: "$cfg_node_uuid"
+    ws-path: "$cfg_ws_path"
 EOF
           ;;
         *)
-          legacy_name="$proto"
-          legacy_port="$node_name"
-          legacy_cipher="$node_port"
-          legacy_password="$value1"
+          cfg_legacy_name="$cfg_proto"
+          cfg_legacy_port="$cfg_node_name"
+          cfg_legacy_cipher="$cfg_node_port"
+          cfg_legacy_password="$cfg_value1"
           cat >> "$tmp_file" <<EOF
-  - name: "$legacy_name"
+  - name: "$cfg_legacy_name"
     type: shadowsocks
-    port: $legacy_port
+    port: $cfg_legacy_port
     listen: 0.0.0.0
-    cipher: $legacy_cipher
-    password: "$legacy_password"
+    cipher: $cfg_legacy_cipher
+    password: "$cfg_legacy_password"
     udp: true
 EOF
           ;;
@@ -623,12 +622,17 @@ print_node_link() {
   value4="${7:-}"
   value5="${8:-}"
   value6="${9:-}"
+  if [ -z "$node_name" ] || [ -z "$node_port" ]; then
+    red "生成节点链接失败：节点名称或端口为空。"
+    return 1
+  fi
+  node_link="$(node_share_link "$proto" "$node_name" "$node_port" "$value1" "$value2" "$value3" "$value4" "$value5" "$value6")"
   cat <<EOF
 
 请确认 VPS 防火墙和云厂商安全组已放行 TCP/UDP $node_port。
 
 节点链接：
-$(node_share_link "$proto" "$node_name" "$node_port" "$value1" "$value2" "$value3" "$value4" "$value5" "$value6")
+$node_link
 EOF
 }
 

@@ -1,4 +1,4 @@
-# ✨ Mihomo Lite - 一键配置脚本 V1.1.0
+# ✨ Mihomo Lite - 一键配置脚本 V1.1.1
 
 <!-- GitHub Badges -->
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%2B-orange?logo=ubuntu)
@@ -68,10 +68,10 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 * 默认日志级别为 `warning`，减少高流量时的日志开销。
 * 服务默认注入 `GOMEMLIMIT=256MiB` 和 `GOGC=100`，可在安装或重启前通过环境变量覆盖。
 
-示例：
+出现断流时时可放宽 GC 限制并重写服务：
 
 ```sh
-MIHOMO_GOMEMLIMIT=192MiB MIHOMO_GOGC=75 mh install
+MIHOMO_GOMEMLIMIT=384MiB MIHOMO_GOGC=150 mh install
 ```
 
-如果容器内存极低并且仍然崩溃，可再收紧到 `128MiB/50`；如果有断流问题，可放宽到 `384MiB/150`。
+如果容器内存极低并且仍然崩溃，可再收紧到 `128MiB/50` 或 `192MiB/75`。

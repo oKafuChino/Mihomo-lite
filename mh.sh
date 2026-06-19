@@ -3,7 +3,7 @@
 set -u
 
 SCRIPT_AUTHOR="oKafuChino"
-SCRIPT_VERSION="1.0.5"
+SCRIPT_VERSION="1.1.0"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"
@@ -11,8 +11,8 @@ CONFIG_FILE="$CONFIG_DIR/config.yaml"
 NODES_DB="$CONFIG_DIR/nodes.db"
 LOG_DIR="/var/log/mihomo"
 SERVICE_NAME="mihomo"
-MIHOMO_GOMEMLIMIT="${MIHOMO_GOMEMLIMIT:-128MiB}"
-MIHOMO_GOGC="${MIHOMO_GOGC:-50}"
+MIHOMO_GOMEMLIMIT="${MIHOMO_GOMEMLIMIT:-256MiB}"
+MIHOMO_GOGC="${MIHOMO_GOGC:-100}"
 GITHUB_API="${MIHOMO_GITHUB_API:-https://api.github.com/repos/MetaCubeX/mihomo/releases/latest}"
 SCRIPT_RAW_URL="${MH_SCRIPT_RAW_URL:-https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/mh.sh}"
 

@@ -1,4 +1,4 @@
-# ✨ Mihomo Lite - 一键配置脚本 V1.0.5
+# ✨ Mihomo Lite - 一键配置脚本 V1.1.0
 
 <!-- GitHub Badges -->
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%2B-orange?logo=ubuntu)
@@ -62,14 +62,16 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 
 ### 🧩 低配 LXC 容器说明
 
-脚本默认使用较保守的 Mihomo 运行参数，降低 Alpine/LXC 小内存环境在高速率下崩溃的概率：
+脚本默认使用兼顾稳定性和吞吐的 Mihomo 运行参数，降低 Alpine/LXC 小内存环境在高速率下崩溃或断流的概率：
 
 * 默认关闭 `fake-ip` 缓存，DNS 使用 `redir-host`。
 * 默认日志级别为 `warning`，减少高流量时的日志开销。
-* 服务默认注入 `GOMEMLIMIT=128MiB` 和 `GOGC=50`，可在安装或重启前通过环境变量覆盖。
+* 服务默认注入 `GOMEMLIMIT=256MiB` 和 `GOGC=100`，可在安装或重启前通过环境变量覆盖。
 
 示例：
 
 ```sh
 MIHOMO_GOMEMLIMIT=192MiB MIHOMO_GOGC=75 mh install
 ```
+
+如果容器内存极低并且仍然崩溃，可再收紧到 `128MiB/50`；如果有断流问题，可放宽到 `384MiB/150`。

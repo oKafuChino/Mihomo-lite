@@ -59,3 +59,17 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 | **日志目录** | `/var/log/mihomo/` | 存储服务的运行与连接日志 |
 
 *💡 后台守护服务名称：`mihomo`*
+
+### 🧩 低配 LXC 容器说明
+
+脚本默认使用较保守的 Mihomo 运行参数，降低 Alpine/LXC 小内存环境在高速率下崩溃的概率：
+
+* 默认关闭 `fake-ip` 缓存，DNS 使用 `redir-host`。
+* 默认日志级别为 `warning`，减少高流量时的日志开销。
+* 服务默认注入 `GOMEMLIMIT=128MiB` 和 `GOGC=50`，可在安装或重启前通过环境变量覆盖。
+
+示例：
+
+```sh
+MIHOMO_GOMEMLIMIT=192MiB MIHOMO_GOGC=75 mh install
+```

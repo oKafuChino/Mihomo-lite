@@ -11,6 +11,8 @@ CONFIG_FILE="$CONFIG_DIR/config.yaml"
 NODES_DB="$CONFIG_DIR/nodes.db"
 LOG_DIR="/var/log/mihomo"
 SERVICE_NAME="mihomo"
+MIHOMO_GOMEMLIMIT="${MIHOMO_GOMEMLIMIT:-128MiB}"
+MIHOMO_GOGC="${MIHOMO_GOGC:-50}"
 GITHUB_API="${MIHOMO_GITHUB_API:-https://api.github.com/repos/MetaCubeX/mihomo/releases/latest}"
 SCRIPT_RAW_URL="${MH_SCRIPT_RAW_URL:-https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/mh.sh}"
 
@@ -311,18 +313,18 @@ mixed-port: 7890
 allow-lan: false
 bind-address: 127.0.0.1
 mode: rule
-log-level: info
+log-level: warning
 ipv6: false
 external-controller: 127.0.0.1:9090
 secret: "$controller_secret"
 profile:
   store-selected: true
-  store-fake-ip: true
+  store-fake-ip: false
 dns:
   enable: true
   listen: 127.0.0.1:1053
   ipv6: false
-  enhanced-mode: fake-ip
+  enhanced-mode: redir-host
   nameserver:
     - 1.1.1.1
     - 8.8.8.8
@@ -439,10 +441,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=GOMEMLIMIT=$MIHOMO_GOMEMLIMIT
+Environment=GOGC=$MIHOMO_GOGC
 ExecStart=$BIN_PATH -d $CONFIG_DIR -f $CONFIG_FILE
 Restart=on-failure
 RestartSec=5s
-LimitNOFILE=1048576
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
@@ -458,10 +462,13 @@ write_openrc_service() {
 description="mihomo proxy service"
 command="$BIN_PATH"
 command_args="-d $CONFIG_DIR -f $CONFIG_FILE"
-command_background="yes"
-pidfile="/run/${SERVICE_NAME}.pid"
 output_log="$LOG_DIR/${SERVICE_NAME}.log"
 error_log="$LOG_DIR/${SERVICE_NAME}.err"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=0
+export GOMEMLIMIT="$MIHOMO_GOMEMLIMIT"
+export GOGC="$MIHOMO_GOGC"
 
 depend() {
   need net

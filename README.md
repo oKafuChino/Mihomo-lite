@@ -1,4 +1,4 @@
-# ✨ Mihomo Lite - 一键配置脚本 V1.2.0
+# ✨ Mihomo Lite - 一键配置脚本 V1.3.0
 <!-- GitHub Badges -->
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%2B-orange?logo=ubuntu)
 ![Debian](https://img.shields.io/badge/Debian-12%2B-red?logo=debian)
@@ -65,9 +65,10 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 
 * 默认关闭 `fake-ip` 缓存，DNS 使用 `redir-host`。
 * 默认日志级别为 `warning`，减少高流量时的日志开销。
-* 服务默认注入 `GOMEMLIMIT=256MiB` 和 `GOGC=100`，可在安装或重启前通过环境变量覆盖。
+* 执行 `mh install` 时会提示填写 `GOMEMLIMIT` 和 `GOGC`。
+* Alpine 推荐 `192MiB/75`，Debian / Ubuntu 推荐 `384MiB/150`，直接回车即可采用推荐值。
 
-出现断流问题时可放宽 GC 限制并重写服务：
+也可以通过环境变量直接指定并重写服务：
 
 ```sh
 MIHOMO_GOMEMLIMIT=384MiB MIHOMO_GOGC=150 mh install

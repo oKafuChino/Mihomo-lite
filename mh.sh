@@ -3,7 +3,7 @@
 set -u
 
 SCRIPT_AUTHOR="oKafuChino"
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.3.0"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"
@@ -11,8 +11,8 @@ CONFIG_FILE="$CONFIG_DIR/config.yaml"
 NODES_DB="$CONFIG_DIR/nodes.db"
 LOG_DIR="/var/log/mihomo"
 SERVICE_NAME="mihomo"
-MIHOMO_GOMEMLIMIT="${MIHOMO_GOMEMLIMIT:-256MiB}"
-MIHOMO_GOGC="${MIHOMO_GOGC:-100}"
+MIHOMO_GOMEMLIMIT="${MIHOMO_GOMEMLIMIT:-}"
+MIHOMO_GOGC="${MIHOMO_GOGC:-}"
 HY2_UP_MBPS=10000
 HY2_DOWN_MBPS=10000
 GITHUB_API="${MIHOMO_GITHUB_API:-https://api.github.com/repos/MetaCubeX/mihomo/releases/latest}"
@@ -152,6 +152,50 @@ make_temp() {
     red "无法创建临时文件：$1"
     exit 1
   }
+}
+
+recommended_runtime() {
+  case "${os_id:-}" in
+    alpine) printf '192MiB|75' ;;
+    debian|ubuntu) printf '384MiB|150' ;;
+    *) printf '256MiB|100' ;;
+  esac
+}
+
+prompt_runtime_tuning() {
+  recommended="$(recommended_runtime)"
+  recommended_mem="${recommended%%|*}"
+  recommended_gogc="${recommended#*|}"
+
+  ui_section "设置 Mihomo 运行参数"
+  if [ -z "$MIHOMO_GOMEMLIMIT" ]; then
+    ui_prompt "请输入 GOMEMLIMIT（推荐 $recommended_mem）："
+    read -r input_mem || true
+    MIHOMO_GOMEMLIMIT="${input_mem:-$recommended_mem}"
+  else
+    ui_warn "使用环境变量 GOMEMLIMIT=$MIHOMO_GOMEMLIMIT"
+  fi
+
+  if [ -z "$MIHOMO_GOGC" ]; then
+    ui_prompt "请输入 GOGC（推荐 $recommended_gogc）："
+    read -r input_gogc || true
+    MIHOMO_GOGC="${input_gogc:-$recommended_gogc}"
+  else
+    ui_warn "使用环境变量 GOGC=$MIHOMO_GOGC"
+  fi
+
+  case "$MIHOMO_GOGC" in
+    ''|*[!0-9]*)
+      red "GOGC 必须是数字。"
+      exit 1
+      ;;
+  esac
+  case "$MIHOMO_GOMEMLIMIT" in
+    *[!A-Za-z0-9]*|'')
+      red "GOMEMLIMIT 只能包含字母和数字，例如 192MiB。"
+      exit 1
+      ;;
+  esac
 }
 
 detect_arch() {
@@ -505,6 +549,7 @@ install_core() {
   need_root
   screen_title "一键安装 Mihomo 内核"
   detect_os
+  prompt_runtime_tuning
   ui_section "安装系统依赖"
   install_packages curl gzip openssl
   mkdir -p "$CONFIG_DIR" "$LOG_DIR"
@@ -574,7 +619,7 @@ port_in_use() {
 
 prompt_node_name() {
   proto_prefix="$1"
-  default_name="${proto_prefix}-$(date +%m%d%H%M)"
+  default_name="$proto_prefix"
   ui_prompt "请输入节点名称（默认 $default_name）："
   read -r node_name || true
   if [ -z "$node_name" ]; then
@@ -706,9 +751,9 @@ add_vless_reality_node() {
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
-  ui_prompt "请输入 Reality SNI（默认 www.microsoft.com）："
+  ui_prompt "请输入 Reality SNI（默认 www.amd.com）："
   read -r sni || true
-  [ -n "$sni" ] || sni="www.microsoft.com"
+  [ -n "$sni" ] || sni="www.amd.com"
   dest="${sni}:443"
   node_uuid="$(new_uuid)"
   key_pair="$(create_reality_keypair)" || exit 1
@@ -726,9 +771,9 @@ add_hysteria2_node() {
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
-  ui_prompt "请输入 TLS SNI / 证书域名（默认 bing.com）："
+  ui_prompt "请输入 TLS SNI / 证书域名（默认 www.amd.com）："
   read -r sni || true
-  [ -n "$sni" ] || sni="bing.com"
+  [ -n "$sni" ] || sni="www.amd.com"
   default_password="$(rand_alnum 32)"
   ui_prompt "请输入 Hysteria2 密码（默认随机生成）："
   read -r node_password || true
@@ -757,9 +802,9 @@ add_anytls_node() {
   node_name="$SELECTED_NODE_NAME"
   prompt_port
   node_port="$SELECTED_NODE_PORT"
-  ui_prompt "请输入 TLS SNI / 证书域名（默认 bing.com）："
+  ui_prompt "请输入 TLS SNI / 证书域名（默认 www.amd.com）："
   read -r sni || true
-  [ -n "$sni" ] || sni="bing.com"
+  [ -n "$sni" ] || sni="www.amd.com"
   node_password="$(rand_alnum 32)"
   cert_pair="$(ensure_tls_cert "$node_name" "$sni")" || exit 1
   cert_file="${cert_pair%%|*}"

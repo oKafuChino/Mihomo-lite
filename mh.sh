@@ -851,7 +851,7 @@ add_vless_ws_node() {
   prompt_port
   node_port="$SELECTED_NODE_PORT"
   server_ip="$(public_ip)"
-  ui_prompt "请输入 WebSocket 域名/Host（默认 $server_ip）："
+  ui_prompt "请输入 WebSocket 域名/Host（你托管在Cloudflare的域名）："
   read -r ws_host || true
   [ -n "$ws_host" ] || ws_host="$server_ip"
   ws_host="$(printf '%s' "$ws_host" | tr -d '|')"

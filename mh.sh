@@ -592,7 +592,7 @@ install_core() {
 
 ensure_installed() {
   if [ ! -x "$BIN_PATH" ] || [ ! -f "$CONFIG_FILE" ]; then
-    red "mihomo 尚未安装，请先在菜单输入 1 安装内核。"
+    red "mihomo 尚未安装，请先在菜单输入 4 安装内核。"
     exit 1
   fi
 }
@@ -667,6 +667,36 @@ append_node() {
   chmod 600 "$NODES_DB"
   render_config
   restart_service
+}
+
+append_node_record() {
+  printf '%s\n' "$1" >> "$NODES_DB"
+  chmod 600 "$NODES_DB"
+}
+
+unique_node_name() {
+  base="$1"
+  name="$base"
+  suffix=2
+  while node_name_exists "$name"; do
+    name="${base}-${suffix}"
+    suffix=$((suffix + 1))
+  done
+  printf '%s' "$name"
+}
+
+unique_port() {
+  while true; do
+    port="$(random_port)"
+    case " ${RESERVED_PORTS:-} " in
+      *" $port "*) continue ;;
+    esac
+    if ! port_in_use "$port"; then
+      RESERVED_PORTS="${RESERVED_PORTS:-} $port"
+      printf '%s' "$port"
+      return 0
+    fi
+  done
 }
 
 node_share_link() {
@@ -837,6 +867,50 @@ add_vless_ws_node() {
   append_node "vless-ws|$node_name|$node_port|$node_uuid|$ws_path|$ws_host|||"
   ui_success "VLESS + WS 节点已生成并重启服务。"
   print_node_link vless-ws "$node_name" "$node_port" "$node_uuid" "$ws_path" "$ws_host" "" "" ""
+}
+
+add_combo_nodes() {
+  need_root
+  ensure_installed
+  screen_title "一键生成 Reality + Hysteria2 + AnyTLS 节点"
+
+  sni="www.amd.com"
+  RESERVED_PORTS=""
+  reality_name="$(unique_node_name vless-reality)"
+  reality_port="$(unique_port)"
+  reality_uuid="$(new_uuid)"
+  reality_key_pair="$(create_reality_keypair)" || exit 1
+  reality_private_key="${reality_key_pair%%|*}"
+  reality_public_key="${reality_key_pair#*|}"
+  reality_short_id="$(rand_hex 8)"
+  reality_dest="${sni}:443"
+
+  hy2_name="$(unique_node_name hy2)"
+  hy2_port="$(unique_port)"
+  hy2_password="$(rand_alnum 32)"
+  hy2_cert_pair="$(ensure_tls_cert "$hy2_name" "$sni")" || exit 1
+  hy2_cert_file="${hy2_cert_pair%%|*}"
+  hy2_key_file="${hy2_cert_pair#*|}"
+
+  anytls_name="$(unique_node_name anytls)"
+  anytls_port="$(unique_port)"
+  anytls_password="$(rand_alnum 32)"
+  anytls_cert_pair="$(ensure_tls_cert "$anytls_name" "$sni")" || exit 1
+  anytls_cert_file="${anytls_cert_pair%%|*}"
+  anytls_key_file="${anytls_cert_pair#*|}"
+
+  append_node_record "vless-reality|$reality_name|$reality_port|$reality_uuid|$sni|$reality_dest|$reality_private_key|$reality_public_key|$reality_short_id"
+  append_node_record "hysteria2|$hy2_name|$hy2_port|$hy2_password|$sni|$hy2_cert_file|$hy2_key_file||"
+  append_node_record "anytls|$anytls_name|$anytls_port|$anytls_password|$sni|$anytls_cert_file|$anytls_key_file||"
+  render_config
+  restart_service
+
+  SHARE_SERVER_IP="$(public_ip)"
+  export SHARE_SERVER_IP
+  ui_success "Reality + Hysteria2 + AnyTLS 节点已生成并重启服务。"
+  print_node_link vless-reality "$reality_name" "$reality_port" "$reality_uuid" "$sni" "$reality_dest" "$reality_private_key" "$reality_public_key" "$reality_short_id"
+  print_node_link hysteria2 "$hy2_name" "$hy2_port" "$hy2_password" "$sni" "$hy2_cert_file" "$hy2_key_file" "" ""
+  print_node_link anytls "$anytls_name" "$anytls_port" "$anytls_password" "$sni" "$anytls_cert_file" "$anytls_key_file" "" ""
 }
 
 add_node() {
@@ -1122,6 +1196,7 @@ ${C_CYAN}----------------------------------------------------${C_RESET}
    ${C_GREEN}1.${C_RESET} 一键生成代理节点
    ${C_GREEN}2.${C_RESET} 查看所有节点链接
    ${C_GREEN}3.${C_RESET} 删除特定节点
+   ${C_GREEN}22.${C_RESET} 一键生成 Reality + Hysteria2 + AnyTLS
 
  ${C_YELLOW}[+] 核心管理${C_RESET}
    ${C_GREEN}4.${C_RESET} 一键安装 Mihomo 内核
@@ -1136,7 +1211,7 @@ ${C_CYAN}----------------------------------------------------${C_RESET}
  ${C_GREEN}0.${C_RESET} => 退出脚本面板
 ${C_CYAN}====================================================${C_RESET}
 EOF
-    printf "${C_BOLD}请输入数字选择 (0-9)：${C_RESET}"
+    printf "${C_BOLD}请输入数字选择 (0-9/22)：${C_RESET}"
     read -r choice || exit 0
 
     case "$choice" in
@@ -1149,8 +1224,9 @@ EOF
       7) show_config; pause ;;
       8) need_root; ensure_installed; clear 2>/dev/null || true; ui_title "重启 Mihomo 服务"; restart_service; ui_success "服务已重启。"; pause ;;
       9) show_logs ;;
+      22) add_combo_nodes; pause ;;
       0) clear; exit 0 ;;
-      *) ui_error "无效选择，请输入 0-9 之间的数字。"; pause ;;
+      *) ui_error "无效选择，请输入 0-9 或 22。"; pause ;;
     esac
   done
 }
@@ -1158,6 +1234,7 @@ EOF
 case "${1:-}" in
   install) install_core ;;
   add) add_node ;;
+  combo|batch|22) add_combo_nodes ;;
   list|nodes) show_all_nodes ;;
   config) show_config ;;
   delete|del|remove) delete_node ;;

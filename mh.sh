@@ -3,7 +3,7 @@
 set -u
 
 SCRIPT_AUTHOR="oKafuChino"
-SCRIPT_VERSION="1.5.0"
+SCRIPT_VERSION="1.6.0"
 BIN_PATH="/usr/local/bin/mihomo"
 CLI_PATH="/usr/local/bin/mh"
 CONFIG_DIR="/etc/mihomo"
@@ -11,6 +11,9 @@ CONFIG_FILE="$CONFIG_DIR/config.yaml"
 NODES_DB="$CONFIG_DIR/nodes.db"
 LOG_DIR="/var/log/mihomo"
 SERVICE_NAME="mihomo"
+RUNTIME_ENV_FILE="$CONFIG_DIR/runtime.env"
+PUBLIC_IP_CACHE_FILE="$CONFIG_DIR/public.ip"
+SYSCTL_CONF_FILE="/etc/sysctl.d/99-mihomo-lite.conf"
 MIHOMO_GOMEMLIMIT="${MIHOMO_GOMEMLIMIT:-}"
 MIHOMO_GOGC="${MIHOMO_GOGC:-}"
 HY2_UP_MBPS=10000
@@ -162,28 +165,22 @@ recommended_runtime() {
   esac
 }
 
-prompt_runtime_tuning() {
-  recommended="$(recommended_runtime)"
-  recommended_mem="${recommended%%|*}"
-  recommended_gogc="${recommended#*|}"
-
-  ui_section "设置 Mihomo 运行参数"
-  if [ -z "$MIHOMO_GOMEMLIMIT" ]; then
-    ui_prompt "请输入 GOMEMLIMIT（推荐 $recommended_mem）："
-    read -r input_mem || true
-    MIHOMO_GOMEMLIMIT="${input_mem:-$recommended_mem}"
-  else
-    ui_warn "使用环境变量 GOMEMLIMIT=$MIHOMO_GOMEMLIMIT"
+load_runtime_tuning() {
+  if [ -r "$RUNTIME_ENV_FILE" ]; then
+    while IFS='=' read -r runtime_key runtime_value; do
+      case "$runtime_key" in
+        MIHOMO_GOMEMLIMIT)
+          [ -n "$MIHOMO_GOMEMLIMIT" ] || MIHOMO_GOMEMLIMIT="$runtime_value"
+          ;;
+        MIHOMO_GOGC)
+          [ -n "$MIHOMO_GOGC" ] || MIHOMO_GOGC="$runtime_value"
+          ;;
+      esac
+    done < "$RUNTIME_ENV_FILE"
   fi
+}
 
-  if [ -z "$MIHOMO_GOGC" ]; then
-    ui_prompt "请输入 GOGC（推荐 $recommended_gogc）："
-    read -r input_gogc || true
-    MIHOMO_GOGC="${input_gogc:-$recommended_gogc}"
-  else
-    ui_warn "使用环境变量 GOGC=$MIHOMO_GOGC"
-  fi
-
+validate_runtime_tuning() {
   case "$MIHOMO_GOGC" in
     ''|*[!0-9]*)
       red "GOGC 必须是数字。"
@@ -196,6 +193,46 @@ prompt_runtime_tuning() {
       exit 1
       ;;
   esac
+}
+
+write_runtime_tuning() {
+  mkdir -p "$CONFIG_DIR"
+  {
+    printf 'MIHOMO_GOMEMLIMIT=%s\n' "$MIHOMO_GOMEMLIMIT"
+    printf 'MIHOMO_GOGC=%s\n' "$MIHOMO_GOGC"
+  } > "$RUNTIME_ENV_FILE"
+  chmod 600 "$RUNTIME_ENV_FILE"
+}
+
+prompt_runtime_tuning() {
+  env_mem="$MIHOMO_GOMEMLIMIT"
+  env_gogc="$MIHOMO_GOGC"
+  load_runtime_tuning
+  recommended="$(recommended_runtime)"
+  recommended_mem="${recommended%%|*}"
+  recommended_gogc="${recommended#*|}"
+
+  ui_section "设置 Mihomo 运行参数"
+  if [ -z "$env_mem" ]; then
+    default_mem="${MIHOMO_GOMEMLIMIT:-$recommended_mem}"
+    ui_prompt "请输入 GOMEMLIMIT（默认 $default_mem，推荐 $recommended_mem）："
+    read -r input_mem || true
+    MIHOMO_GOMEMLIMIT="${input_mem:-$default_mem}"
+  else
+    ui_warn "使用环境变量 GOMEMLIMIT=$MIHOMO_GOMEMLIMIT"
+  fi
+
+  if [ -z "$env_gogc" ]; then
+    default_gogc="${MIHOMO_GOGC:-$recommended_gogc}"
+    ui_prompt "请输入 GOGC（默认 $default_gogc，推荐 $recommended_gogc）："
+    read -r input_gogc || true
+    MIHOMO_GOGC="${input_gogc:-$default_gogc}"
+  else
+    ui_warn "使用环境变量 GOGC=$MIHOMO_GOGC"
+  fi
+
+  validate_runtime_tuning
+  write_runtime_tuning
 }
 
 detect_arch() {
@@ -329,14 +366,50 @@ random_port() {
   od -An -N2 -tu2 /dev/urandom | awk '{ print 20000 + ($1 % 30000) }'
 }
 
-public_ip() {
+is_ipv4() {
+  printf '%s\n' "$1" | awk -F. '
+    NF != 4 { exit 1 }
+    {
+      for (i = 1; i <= 4; i++) {
+        if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1
+      }
+      exit 0
+    }
+  '
+}
+
+fetch_public_ip() {
+  command -v curl >/dev/null 2>&1 || return 1
   ip="$(curl -4 -fsSL https://api.ipify.org 2>/dev/null || true)"
   if [ -z "$ip" ]; then
     ip="$(curl -4 -fsSL https://ifconfig.me 2>/dev/null || true)"
   fi
-  if [ -z "$ip" ]; then
-    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  ip="$(printf '%s' "$ip" | tr -d '[:space:]')"
+  is_ipv4 "$ip" || return 1
+  printf '%s' "$ip"
+}
+
+public_ip() {
+  cached_ip=""
+  if [ -r "$PUBLIC_IP_CACHE_FILE" ]; then
+    cached_ip="$(sed -n '1p' "$PUBLIC_IP_CACHE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if is_ipv4 "$cached_ip"; then
+      printf '%s' "$cached_ip"
+      return 0
+    fi
   fi
+
+  if ip="$(fetch_public_ip 2>/dev/null)"; then
+    mkdir -p "$CONFIG_DIR" 2>/dev/null || true
+    if [ -w "$CONFIG_DIR" ] || [ -w "$PUBLIC_IP_CACHE_FILE" ]; then
+      printf '%s\n' "$ip" > "$PUBLIC_IP_CACHE_FILE" 2>/dev/null || true
+      chmod 600 "$PUBLIC_IP_CACHE_FILE" 2>/dev/null || true
+    fi
+    printf '%s' "$ip"
+    return 0
+  fi
+
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   if [ -z "$ip" ]; then
     ip="YOUR_SERVER_IP"
   fi
@@ -501,7 +574,8 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable --now "$SERVICE_NAME"
+  systemctl enable "$SERVICE_NAME" >/dev/null
+  systemctl restart "$SERVICE_NAME"
 }
 
 write_openrc_service() {
@@ -1240,6 +1314,179 @@ show_logs() {
   esac
 }
 
+apply_runtime_service() {
+  manager="$(service_manager)"
+  case "$manager" in
+    systemd)
+      write_systemd_service
+      ;;
+    openrc)
+      write_openrc_service
+      ;;
+    *)
+      red "未找到 systemd 或 OpenRC，无法应用性能参数。"
+      exit 1
+      ;;
+  esac
+}
+
+performance_tuning_menu() {
+  need_root
+  ensure_installed
+  detect_os
+  load_runtime_tuning
+  recommended="$(recommended_runtime)"
+  recommended_mem="${recommended%%|*}"
+  recommended_gogc="${recommended#*|}"
+  current_mem="${MIHOMO_GOMEMLIMIT:-未设置}"
+  current_gogc="${MIHOMO_GOGC:-未设置}"
+
+  case "${os_id:-}" in
+    alpine)
+      high_mem="256MiB"
+      high_gogc="125"
+      ;;
+    *)
+      high_mem="512MiB"
+      high_gogc="200"
+      ;;
+  esac
+
+  screen_title "性能优化菜单"
+  cat <<EOF
+ 当前参数：GOMEMLIMIT=$current_mem  GOGC=$current_gogc
+ 系统推荐：GOMEMLIMIT=$recommended_mem  GOGC=$recommended_gogc
+${C_CYAN}----------------------------------------------------${C_RESET}
+ ${C_GREEN}1.${C_RESET} 低配稳定模式    GOMEMLIMIT=192MiB  GOGC=75
+ ${C_GREEN}2.${C_RESET} 系统推荐模式    GOMEMLIMIT=$recommended_mem  GOGC=$recommended_gogc
+ ${C_GREEN}3.${C_RESET} 高吞吐模式      GOMEMLIMIT=$high_mem  GOGC=$high_gogc
+ ${C_GREEN}4.${C_RESET} 自定义参数
+ ${C_GREEN}0.${C_RESET} => 返回主菜单
+${C_CYAN}====================================================${C_RESET}
+EOF
+  ui_prompt "请输入数字选择 (0-4)："
+  read -r perf_choice || true
+
+  case "$perf_choice" in
+    1)
+      MIHOMO_GOMEMLIMIT="192MiB"
+      MIHOMO_GOGC="75"
+      ;;
+    2)
+      MIHOMO_GOMEMLIMIT="$recommended_mem"
+      MIHOMO_GOGC="$recommended_gogc"
+      ;;
+    3)
+      MIHOMO_GOMEMLIMIT="$high_mem"
+      MIHOMO_GOGC="$high_gogc"
+      ;;
+    4)
+      default_mem="${MIHOMO_GOMEMLIMIT:-$recommended_mem}"
+      default_gogc="${MIHOMO_GOGC:-$recommended_gogc}"
+      ui_prompt "请输入 GOMEMLIMIT（默认 $default_mem）："
+      read -r input_mem || true
+      MIHOMO_GOMEMLIMIT="${input_mem:-$default_mem}"
+      ui_prompt "请输入 GOGC（默认 $default_gogc）："
+      read -r input_gogc || true
+      MIHOMO_GOGC="${input_gogc:-$default_gogc}"
+      ;;
+    0)
+      ui_warn "已取消性能参数调整。"
+      return 0
+      ;;
+    *)
+      ui_error "无效选择。"
+      return 1
+      ;;
+  esac
+
+  validate_runtime_tuning
+  write_runtime_tuning
+  apply_runtime_service
+  ui_success "性能参数已更新：GOMEMLIMIT=$MIHOMO_GOMEMLIMIT，GOGC=$MIHOMO_GOGC。"
+}
+
+apply_sysctl_value() {
+  sysctl_key="$1"
+  sysctl_value="$2"
+  sysctl_tmp="$3"
+  proc_path="/proc/sys/$(printf '%s' "$sysctl_key" | tr '.' '/')"
+
+  if [ ! -e "$proc_path" ]; then
+    ui_warn "$sysctl_key 当前内核不支持，已跳过。"
+    return 1
+  fi
+  if [ ! -w "$proc_path" ]; then
+    ui_warn "$sysctl_key 当前无写入权限，可能是 LXC 容器限制，已跳过。"
+    return 1
+  fi
+
+  if command -v sysctl >/dev/null 2>&1 && sysctl -w "$sysctl_key=$sysctl_value" >/dev/null 2>&1; then
+    printf '%s = %s\n' "$sysctl_key" "$sysctl_value" >> "$sysctl_tmp"
+    ui_success "$sysctl_key=$sysctl_value"
+    return 0
+  fi
+
+  if ( printf '%s\n' "$sysctl_value" > "$proc_path" ) 2>/dev/null; then
+    printf '%s = %s\n' "$sysctl_key" "$sysctl_value" >> "$sysctl_tmp"
+    ui_success "$sysctl_key=$sysctl_value"
+    return 0
+  fi
+
+  ui_warn "$sysctl_key 写入失败，已跳过。"
+  return 1
+}
+
+optimize_sysctl_network() {
+  need_root
+  screen_title "sysctl 网络优化"
+  ui_warn "该功能会尝试优化 BBR、队列、TCP/UDP 缓冲和端口范围。"
+  ui_warn "LXC 容器可能无法写入部分内核参数，脚本会逐项跳过无权限项目。"
+  ui_prompt "确认应用网络优化？输入 y 确认："
+  read -r confirm || true
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *)
+      ui_warn "已取消 sysctl 网络优化。"
+      return 0
+      ;;
+  esac
+
+  command -v modprobe >/dev/null 2>&1 && modprobe tcp_bbr 2>/dev/null || true
+
+  tmp_file="$(make_temp /tmp/mihomo-sysctl.XXXXXX)"
+  printf '# Generated by Mihomo Lite\n' > "$tmp_file"
+  applied=0
+
+  if apply_sysctl_value "net.core.default_qdisc" "fq" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.ipv4.tcp_congestion_control" "bbr" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.core.rmem_max" "67108864" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.core.wmem_max" "67108864" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.core.rmem_default" "262144" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.core.wmem_default" "262144" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.core.somaxconn" "65535" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.core.netdev_max_backlog" "250000" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.ipv4.tcp_max_syn_backlog" "65535" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.ipv4.tcp_fastopen" "3" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.ipv4.tcp_mtu_probing" "1" "$tmp_file"; then applied=$((applied + 1)); fi
+  if apply_sysctl_value "net.ipv4.ip_local_port_range" "1024 65535" "$tmp_file"; then applied=$((applied + 1)); fi
+
+  if [ "$applied" -eq 0 ]; then
+    rm -f "$tmp_file"
+    ui_warn "没有成功应用任何 sysctl 参数，当前环境可能限制较多。"
+    return 1
+  fi
+
+  mkdir -p /etc/sysctl.d
+  if mv "$tmp_file" "$SYSCTL_CONF_FILE"; then
+    chmod 644 "$SYSCTL_CONF_FILE"
+    ui_success "已应用 $applied 项网络参数，并保存到 $SYSCTL_CONF_FILE。"
+  else
+    rm -f "$tmp_file"
+    ui_warn "当前参数已尝试应用，但无法保存到 $SYSCTL_CONF_FILE。"
+  fi
+}
+
 update_script() {
   need_root
   ensure_curl
@@ -1335,11 +1582,13 @@ ${C_CYAN}----------------------------------------------------${C_RESET}
   ${C_YELLOW}[+] 其他功能${C_RESET}
    ${C_GREEN}22.${C_RESET} 一键生成 Reality + Hysteria2 + AnyTLS
    ${C_GREEN}33.${C_RESET} 一键重命名所有节点
+   ${C_GREEN}44.${C_RESET} 性能优化菜单
+   ${C_GREEN}55.${C_RESET} sysctl 网络优化
 ${C_CYAN}----------------------------------------------------${C_RESET}
  ${C_GREEN}0.${C_RESET} => 退出脚本面板
 ${C_CYAN}====================================================${C_RESET}
 EOF
-    printf "${C_BOLD}请输入数字选择 (0-9/22/33)：${C_RESET}"
+    printf "${C_BOLD}请输入数字选择 (0-9/22/33/44/55)：${C_RESET}"
     read -r choice || exit 0
 
     case "$choice" in
@@ -1354,8 +1603,10 @@ EOF
       9) show_logs ;;
       22) add_combo_nodes; pause ;;
       33) rename_all_nodes; pause ;;
+      44) performance_tuning_menu; pause ;;
+      55) optimize_sysctl_network; pause ;;
       0) clear; exit 0 ;;
-      *) ui_error "无效选择，请输入 0-9、22 或 33。"; pause ;;
+      *) ui_error "无效选择，请输入 0-9、22、33、44 或 55。"; pause ;;
     esac
   done
 }
@@ -1365,6 +1616,8 @@ case "${1:-}" in
   add) add_node ;;
   combo|batch|22) add_combo_nodes ;;
   rename|rename-all|33) rename_all_nodes ;;
+  perf|performance|tune|44) performance_tuning_menu ;;
+  sysctl|netopt|55) optimize_sysctl_network ;;
   list|nodes) show_all_nodes ;;
   config) show_config ;;
   delete|del|remove) delete_node ;;

@@ -1,4 +1,4 @@
-# ✨ Mihomo Lite - 一键配置脚本 V1.5.0
+# ✨ Mihomo Lite - 一键配置脚本 V1.6.0
 <!-- GitHub Badges -->
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%2B-orange?logo=ubuntu)
 ![Debian](https://img.shields.io/badge/Debian-12%2B-red?logo=debian)
@@ -33,6 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 * **🔗 节点生成**：一键生成代理节点，并自动输出可复制导入的节点链接。
 * **📊 节点管理**：查看所有已建节点、单节点链接以及 **Base64 聚合订阅**，支持单节点删除、一键清空和批量重命名。
 * **⚙️ 服务运维**：一键查看 YAML 配置文件、重启服务进程。
+* **🚀 性能优化**：支持运行时参数调优、sysctl 网络优化和公网 IP 本地缓存。
 * **📡 运行监控**：实时查看 Mihomo 运行日志。
 * **🔄 无缝升级**：支持一键拉取并更新管理脚本自身。
 
@@ -49,6 +50,10 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 
 菜单输入 `33` 可批量重命名所有节点，格式为 `国家旗帜Emoji国家全称-服务商名称-节点协议`，国家旗帜会根据输入的国家自动识别。
 
+菜单输入 `44` 可调整 Mihomo 的 `GOMEMLIMIT` 和 `GOGC`，支持低配稳定、系统推荐、高吞吐和自定义参数。
+
+菜单输入 `55` 可尝试应用 sysctl 网络优化，包括 BBR、队列、TCP/UDP 缓冲和本地端口范围。LXC 容器可能无法写入部分参数，脚本会自动跳过无权限项目。
+
 ---
 
 ## 📂 目录与服务架构
@@ -62,6 +67,8 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 | **配置主目录** | `/etc/mihomo/` | 存储运行所需的各项配置 |
 | **主配置文件** | `/etc/mihomo/config.yaml` | Mihomo 运行的源配置 |
 | **节点数据库** | `/etc/mihomo/nodes.db` | 本地化存储已生成的节点记录 |
+| **运行参数** | `/etc/mihomo/runtime.env` | 存储 `GOMEMLIMIT` 与 `GOGC` |
+| **公网 IP 缓存** | `/etc/mihomo/public.ip` | 生成节点链接时优先读取，减少外部 API 请求 |
 | **日志目录** | `/var/log/mihomo/` | 存储服务的运行与连接日志 |
 
 *💡 后台守护服务名称：`mihomo`*
@@ -73,6 +80,8 @@ curl -fsSL https://raw.githubusercontent.com/oKafuChino/Mihomo-lite/main/install
 * 默认关闭 `fake-ip` 缓存，DNS 使用 `redir-host`。
 * 默认日志级别为 `warning`，减少高流量时的日志开销。
 * 执行 `mh install` 时会提示填写 `GOMEMLIMIT` 和 `GOGC`。
+* 后续可通过菜单 `44` 随时切换运行时性能档位。
+* 菜单 `55` 可尝试应用网络栈优化；容器无权限的 sysctl 项会被跳过。
 * Alpine 推荐 `192MiB/75`，Debian / Ubuntu 推荐 `384MiB/150`，直接回车即可采用推荐值。
 
 也可以通过环境变量直接指定并重写服务：
@@ -82,3 +91,5 @@ MIHOMO_GOMEMLIMIT=384MiB MIHOMO_GOGC=150 mh install
 ```
 
 如果容器内存极低并且仍然崩溃，可再收紧到 `128MiB/50` 或 `192MiB/75`。
+
+节点链接里的公网 IP 会缓存到 `/etc/mihomo/public.ip`。如果 VPS 更换了出口 IP，删除该文件后重新查看或生成节点即可刷新。
